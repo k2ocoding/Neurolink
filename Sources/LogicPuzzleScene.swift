@@ -60,6 +60,10 @@ class LogicPuzzleScene: Scene {
         
         // Set target value
         targetValue = 10
+        
+        // Initialize with cursor in center of grid
+        cursorX = 2
+        cursorY = 2
     }
     
     private func isValidMove(fromX: Int, fromY: Int, toX: Int, toY: Int) -> Bool {
@@ -116,10 +120,19 @@ class LogicPuzzleScene: Scene {
         for startNode in 1...6 {
             var visited = Set<Int>()
             if evaluatePath(from: startNode, visited: &visited, adjacencyList: adjacencyList, currentValue: nodeValues[startNode]!) {
-                solved = true
+                // Solution found - evaluatePath sets solved = true internally
+                if solved {
+                    // Prepare transition only if we weren't already solved
+                    prepareSuccessTransition()
+                }
                 return
             }
         }
+    }
+    
+    private func prepareSuccessTransition() {
+        // Set up transition to next scene
+        nextSceneToTransition = MemoryPuzzleScene(renderer: renderer, inputHandler: inputHandler)
     }
     
     private func evaluatePath(from node: Int, visited: inout Set<Int>, adjacencyList: [Int: [Int]], currentValue: Int) -> Bool {
@@ -128,6 +141,8 @@ class LogicPuzzleScene: Scene {
         
         // Check if we reached the target value
         if currentValue == targetValue && visited.count > 1 {
+            // Mark as solved immediately when we detect a valid path
+            solved = true
             return true
         }
         
@@ -163,7 +178,10 @@ class LogicPuzzleScene: Scene {
     func handleInput(_ input: Character, gameState: inout GameState) {
         if solved {
             if input == " " || input == "\r" {
-                nextSceneToTransition = MemoryPuzzleScene(renderer: renderer, inputHandler: inputHandler)
+                // Ensure we have the next scene ready for transition
+                if nextSceneToTransition == nil {
+                    prepareSuccessTransition()
+                }
             }
             return
         }
@@ -179,12 +197,16 @@ class LogicPuzzleScene: Scene {
             cursorX = min(grid[0].count - 1, cursorX + 1)
         case " ", "\r": // Space or Enter - select/connect
             if let selected = selectedCell {
+                // Trying to complete a connection
                 if isValidMove(fromX: selected.0, fromY: selected.1, toX: cursorX, toY: cursorY) {
-                    connectCells(fromX: selected.0, fromY: selected.1, toX: cursorX, toY: cursorY)
+                    // Only add the connection if it's between two nodes
+                    if grid[selected.1][selected.0] > 0 && grid[cursorY][cursorX] > 0 {
+                        connectCells(fromX: selected.0, fromY: selected.1, toX: cursorX, toY: cursorY)
+                    }
                 }
                 selectedCell = nil // Deselect after attempt
             } else if grid[cursorY][cursorX] > 0 {
-                // Select this cell
+                // Select this cell if it's a node
                 selectedCell = (cursorX, cursorY)
             }
         case "r", "R": // Reset puzzle
@@ -202,6 +224,10 @@ class LogicPuzzleScene: Scene {
         // Update elapsed time
         if !solved {
             elapsedTime = Date().timeIntervalSince(startTime)
+            
+            // Double-check solution on each update cycle
+            // This ensures we don't miss any win conditions
+            checkSolution()
         }
         
         // If puzzle is solved, update game state
@@ -221,6 +247,7 @@ class LogicPuzzleScene: Scene {
         let highlightColor = Renderer.Colors.brightYellow
         let successColor = Renderer.Colors.brightGreen
         let selectedColor = Renderer.Colors.brightMagenta
+        let connectionColor = Renderer.Colors.brightWhite
         
         // Title and instructions
         if solved {
@@ -254,6 +281,38 @@ class LogicPuzzleScene: Scene {
         // Draw grid background
         renderer.drawBox(x: gridX - 2, y: gridY - 1, width: gridWidth + 4, height: gridHeight + 2, color: solved ? successColor : baseColor)
         
+        // Draw connections between nodes first (so they appear behind nodes)
+        for (fromX, fromY, toX, toY) in connectedPaths {
+            // Make sure these are actual nodes we're connecting
+            guard grid[fromY][fromX] > 0 && grid[toY][toX] > 0 else { continue }
+            
+            let fromCellX = gridX + fromX * cellWidth + cellWidth/2
+            let fromCellY = gridY + fromY * cellHeight + cellHeight/2
+            let toCellX = gridX + toX * cellWidth + cellWidth/2
+            let toCellY = gridY + toY * cellHeight + cellHeight/2
+            
+            // Draw line between cells (with better visibility)
+            if fromX == toX {
+                // Vertical connection
+                let minY = min(fromCellY, toCellY)
+                let maxY = max(fromCellY, toCellY)
+                
+                // Draw the vertical line
+                for y in minY...maxY {
+                    renderer.drawText(x: fromCellX, y: y, text: "│", color: connectionColor)
+                }
+            } else if fromY == toY {
+                // Horizontal connection
+                let minX = min(fromCellX, toCellX)
+                let maxX = max(fromCellX, toCellX)
+                
+                // Draw the horizontal line
+                for x in minX...maxX {
+                    renderer.drawText(x: x, y: fromCellY, text: "─", color: connectionColor)
+                }
+            }
+        }
+        
         // Draw grid cells
         for y in 0..<grid.count {
             for x in 0..<grid[y].count {
@@ -262,43 +321,34 @@ class LogicPuzzleScene: Scene {
                 
                 // Determine cell color
                 var cellColor = dimmedColor
-                if (x, y) == (cursorX, cursorY) {
-                    cellColor = highlightColor
-                } else if let selected = selectedCell, selected == (x, y) {
+                if let selected = selectedCell, selected == (x, y) {
                     cellColor = selectedColor
+                } else if (x, y) == (cursorX, cursorY) {
+                    cellColor = highlightColor
                 } else if grid[y][x] > 0 {
                     cellColor = baseColor
                 }
                 
-                // Draw cell content
+                // Draw cell content based on whether it's a node or empty cell
                 if grid[y][x] > 0 {
+                    // This is a node - draw its value and operation
                     let nodeId = grid[y][x]
                     let nodeValue = nodeValues[nodeId] ?? 0
                     let nodeOp = nodeOperations[nodeId] ?? ""
                     let cellText = String(format: "%d%@", nodeValue, nodeOp)
-                    renderer.drawText(x: cellX + 1, y: cellY + 0, text: cellText, color: cellColor)
+                    
+                    // Draw the node value
+                    renderer.drawText(x: cellX + 1, y: cellY, text: cellText, color: cellColor)
                 } else {
-                    renderer.drawText(x: cellX + 1, y: cellY + 0, text: "  ", color: cellColor)
+                    // Empty cell - just draw space
+                    renderer.drawText(x: cellX + 1, y: cellY, text: "  ", color: cellColor)
                 }
-            }
-        }
-        
-        // Draw connections
-        for (fromX, fromY, toX, toY) in connectedPaths {
-            let fromCellX = gridX + fromX * cellWidth + cellWidth/2
-            let fromCellY = gridY + fromY * cellHeight + cellHeight/2
-            let toCellX = gridX + toX * cellWidth + cellWidth/2
-            let toCellY = gridY + toY * cellHeight + cellHeight/2
-            
-            // Draw line between cells (simplified with characters)
-            if fromX == toX {
-                // Vertical connection
-                let y = min(fromCellY, toCellY)
-                renderer.drawText(x: fromCellX, y: y, text: "│", color: dimmedColor)
-            } else if fromY == toY {
-                // Horizontal connection
-                let x = min(fromCellX, toCellX)
-                renderer.drawText(x: x, y: fromCellY, text: "─", color: dimmedColor)
+                
+                // Draw cursor marker only for the current cursor position
+                // Place it in a position that doesn't overlap with node values
+                if (x, y) == (cursorX, cursorY) {
+                    renderer.drawText(x: cellX, y: cellY + 1, text: "◆", color: highlightColor)
+                }
             }
         }
         

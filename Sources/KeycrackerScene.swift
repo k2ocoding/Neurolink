@@ -22,6 +22,8 @@ class KeycrackerScene: Scene {
     private var lost = false
     private var difficulty = 1 // 1-3 scale
     private var interference = false
+    // Track corrupted patterns for restoration
+    private var patternRestorations: [(index: Int, pattern: String, time: Date)] = []
     
     init(renderer: Renderer, inputHandler: InputHandler, difficulty: Int = 1) {
         self.renderer = renderer
@@ -153,6 +155,22 @@ class KeycrackerScene: Scene {
                 lost = true
             }
             
+            // Restore any corrupted patterns that have reached their restoration time
+            let now = Date()
+            var restoredIndices: [Int] = []
+            
+            for (i, restoration) in patternRestorations.enumerated() {
+                if now.timeIntervalSince(restoration.time) >= 0 {
+                    keyPatterns[restoration.index] = restoration.pattern
+                    restoredIndices.append(i)
+                }
+            }
+            
+            // Remove restored patterns from the tracking array (in reverse to avoid index issues)
+            for i in restoredIndices.sorted(by: >) {
+                patternRestorations.remove(at: i)
+            }
+            
             // Update cycling patterns
             if cycling && Date().timeIntervalSince(lastCycleTime) >= cycleSpeed {
                 cyclePosition = (cyclePosition + 1) % keyPatterns.count
@@ -177,13 +195,12 @@ class KeycrackerScene: Scene {
                     // Store corrupted pattern
                     keyPatterns[randomIndex] = corruptedPattern
                     
-                    // Schedule restoration
-                    DispatchQueue.main.asyncAfter(deadline: .now() + cycleSpeed) {
-                        // Only restore if the game is still running
-                        if !self.won && !self.lost {
-                            self.keyPatterns[randomIndex] = originalPattern
-                        }
-                    }
+                    // Store the pattern for restoration later, avoiding DispatchQueue race conditions
+                    patternRestorations.append((
+                        index: randomIndex,
+                        pattern: originalPattern,
+                        time: Date().addingTimeInterval(cycleSpeed)
+                    ))
                 }
             }
         }
