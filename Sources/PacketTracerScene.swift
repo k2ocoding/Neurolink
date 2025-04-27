@@ -367,10 +367,10 @@ class PacketTracerScene: Scene {
                     } else {
                         cellColor = baseColor
                     }
-                } else if let securityIndex = securityNodes.firstIndex(where: { $0.x == x && $0.y == y }) {
+                } else if securityNodes.contains(where: { $0.x == x && $0.y == y }) {
                     cellContent = "S"
                     cellColor = dangerColor
-                } else if let packetIndex = packets.firstIndex(where: { $0.x == x && $0.y == y && !$0.delivered }) {
+                } else if packets.contains(where: { $0.x == x && $0.y == y && !$0.delivered }) {
                     cellContent = "P"
                     cellColor = packetColor
                 } else if packets.contains(where: { $0.targetX == x && $0.targetY == y }) {
@@ -418,7 +418,6 @@ class PacketTracerScene: Scene {
         
         // Router instructions if selected
         if let selectedIdx = selectedRouterIndex, !won && !lost {
-            let router = routerNodes[selectedIdx]
             renderer.drawTextCentered(y: controlsY + 3, text: "Router R\(selectedIdx+1) disabled - packets will avoid this node", color: selectedColor)
         }
     }

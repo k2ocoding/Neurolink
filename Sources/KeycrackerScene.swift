@@ -282,7 +282,7 @@ class KeycrackerScene: Scene {
             renderer.drawText(x: displayX + i * 10 + 1, y: displayY + 1, text: pattern, color: patternColor)
             
             // Draw selection number below
-            renderer.drawTextCentered(x: displayX + i * 10 + 5, y: displayY + 3, text: "\(i+1)", color: patternColor)
+            renderer.drawText(x: displayX + i * 10 + 4, y: displayY + 3, text: "\(i+1)", color: patternColor)
         }
         
         // Draw cursor indicator
